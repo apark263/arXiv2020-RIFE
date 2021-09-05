@@ -1,6 +1,5 @@
 import torch
 from torch.optim import AdamW
-from torch.nn.parallel import DistributedDataParallel as DDP
 from model.IFNet_HDv3 import *
 from model.loss import *
 
@@ -15,9 +14,6 @@ class Model:
                             lr=1e-6, weight_decay=1e-4)
         self.epe = EPE()
         self.sobel = SOBEL()
-        if local_rank != -1:
-            self.flownet = DDP(self.flownet, device_ids=[
-                               local_rank], output_device=local_rank)
 
     def train(self):
         self.flownet.train()

@@ -29,6 +29,7 @@ flags.DEFINE_integer('exp', 1, 'Exponential in pyramid range.')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 def compute_dimensions(frame):
     tmp = 32
     h, w, _ = frame.shape
@@ -69,6 +70,20 @@ def make_inference(mdl, I0, I1, n):
         return [*first_half, *second_half]
 
 
+def make_inference_iter(mdl, I0, I1):
+    middle = mdl.inference(I0, I1)
+    first_half = mdl.inference(I0, middle)[0]
+    second_half = mdl.inference(middle, I1)[0]
+    return [first_half, middle, second_half]
+
+
+def make_v3(flownet, I0, I1):
+    _, _, (_, _, o1) = flownet(torch.cat((I0, I1), 1))
+    _, _, (_, _, o0) = flownet(torch.cat((I0, o1), 1))
+    _, _, (_, _, o2) = flownet(torch.cat((o1, I1), 1))
+    return [o0, o1, o2]
+
+
 def load_frame(imframe, pad_fn, device=device):
     t_img = torch.from_numpy(np.transpose(imframe, (2, 0, 1))).to(
         device, non_blocking=True).unsqueeze(0).float() / 255.
@@ -84,7 +99,7 @@ def sorted_image_list(image_dir, extension='.jpg'):
 
 def main(argv):
     del argv    # Unused
-    pyramid_scale = (2 ** FLAGS.exp) - 1
+    expansion_scale = (2 ** FLAGS.exp) - 1
 
     torch.set_grad_enabled(False)
     if torch.cuda.is_available():
@@ -101,6 +116,7 @@ def main(argv):
 
     videogen = sorted_image_list(FLAGS.image_dir, FLAGS.image_ext)
     pbar = tqdm(total=len(videogen))
+    # imread -> HxWxC
     previous_frame = cv2.imread(videogen.pop(0), cv2.IMREAD_UNCHANGED)[
         :, :, ::-1].copy()
     h, w, padding = compute_dimensions(previous_frame)
@@ -144,9 +160,9 @@ def main(argv):
                 continue
 
         if ssim < 0.2:
-            output = [I0 for i in range(pyramid_scale)]
+            output = [I0] * expansion_scale
         else:
-            output = make_inference(model, I0, I1, pyramid_scale)
+            output = make_inference(model, I0, I1, expansion_scale)
 
         write_buffer.put(previous_frame)
         for mid in output:
